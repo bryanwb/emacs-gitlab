@@ -25,6 +25,10 @@
 (require 's)
 (require 'f)
 
+
+(define-error 'gitlab-not-in-repo-error "Not currently visiting a git repository")
+  
+
 (defun gitlab--shell-to-string (cmd)
   "Custom shell command execution. Returns stdout if command succeeds,
    otherwise returns nil"
@@ -34,12 +38,27 @@
       (if (eq 0 (call-process-shell-command cmd nil glob-buf-stdout))
           (buffer-string)
         (signal 'error (list (format "command \"%s\" failed with non-zero exit code" cmd)))))))
-  
+
 
 (defun gitlab--get-git-exec ()
   "This duplicates functionality inside magit"
   (executable-find "git"))
 
+
+(defun gitlab--git-repo? ()
+  "Test if currently visiting a git repository."
+  (condition-case error
+      (progn
+        (gitlab--shell-to-string (format "%s rev-parse" (gitlab--get-git-exec)))
+        t)
+    (error nil)))
+
+
+(defun gitlab--raise-if-not-in-repo ()
+  "Raise an error if not currently visiting a git repository"
+  (if (not (gitlab--git-repo?))
+      (signal 'gitlab-not-in-repo-error ())))
+  
 (defun gitlab--get-branch ()
   "Finds the current branch"
   (let
@@ -53,7 +72,7 @@
     (s-trim
      (gitlab--shell-to-string cmd))))
 
-(defun gitlab--get-relevant-path ()
+(defun gitlab--get-relative-path ()
   "Return directory path if in dired mode. Return full file path if viewing
    a file. For all other cases, return the toplevel git directory"
   (cond
@@ -78,12 +97,13 @@
 (defun gitlab--get-origin ()
   "Get the full git url for the origin remote"
   (interactive)
+  (gitlab--raise-if-not-in-repo)
   (let ((get-url-cmd (format "%s remote get-url origin" (gitlab--get-git-exec))))
     (gitlab--shell-to-string get-url-cmd)))
      
 
 (defun gitlab--get-current-path-relative ()
-  (file-relative-name (gitlab--get-relevant-path) (gitlab--get-top-level-dir)))
+  (file-relative-name (gitlab--get-relative-path) (gitlab--get-top-level-dir)))
 
 
 (defun gitlab--get-line-nums ()
